@@ -297,46 +297,137 @@ export const DataTable = () => {
 
   // INSERT ONLY - Auto-fix and add new rows
   const handleSave = async () => {
-    if (!selectedDatabase) return;
+    if (!selectedDatabase || typeof selectedDatabase !== 'string' || !selectedDatabase.trim()) {
+      toast({
+        title: 'Save Error',
+        description: 'No table selected. Please select a valid table before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!columns || columns.length === 0 || !columns[0] || typeof columns[0] !== 'string' || !columns[0].trim()) {
+      toast({
+        title: 'Save Error',
+        description: 'Primary key column is missing or invalid. Please check your table structure.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
       setIsSaving(true);
       setError(null);
 
-      // Get only NEW rows (after original data length)
-      const newRows = tableData.slice(originalDataLength);
-      
-      if (newRows.length === 0) {
+      if (mode === 'insert') {
+        // INSERT MODE: Only new rows (after original data length)
+        const newRows = tableData.slice(originalDataLength);
+        if (newRows.length === 0) {
+          toast({
+            title: 'No New Data',
+            description: 'Please add new rows to save.',
+            variant: 'destructive',
+          });
+          setIsSaving(false);
+          return;
+        }
+        // Validate and auto-fix data before sending
+        const fixedRows = validateAndAutoFixData(newRows, tableData.slice(0, originalDataLength));
+        const result = await insertTableDataApi3(selectedDatabase, fixedRows);
+        // Refresh table data after successful insert
+        try {
+          const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
+          setTableData(refreshedData.data);
+        } catch (refreshError) {
+          console.warn('Could not refresh data after insert:', refreshError);
+        }
         toast({
-          title: 'No New Data',
-          description: 'Please add new rows to save.',
-          variant: 'destructive',
+          title: 'Success',
+          description: `${newRows.length} rows inserted successfully with auto-fix applied!`,
         });
-        setIsSaving(false);
-        return;
+      } else if (mode === 'update') {
+        // Defensive: block if PK column is not present
+        const pk = columns[0];
+        if (!pk || typeof pk !== 'string' || !pk.trim()) {
+          toast({
+            title: 'Update Error',
+            description: 'Primary key column is missing or invalid. Cannot update.',
+            variant: 'destructive',
+          });
+          setIsSaving(false);
+          return;
+        }
+        // UPDATE MODE: Only update original rows (not new rows)
+        // Only send rows that have changed (diff originalData vs tableData)
+        // Try to get originalData from store, fallback to local copy
+        let originalRows = [];
+        if (typeof useDashboardStore.getState === 'function' && useDashboardStore.getState().originalData) {
+          originalRows = useDashboardStore.getState().originalData;
+        } else {
+          originalRows = tableData.slice(0, originalDataLength);
+        }
+        const updates = [];
+        for (let i = 0; i < originalRows.length; i++) {
+          const orig = originalRows[i];
+          const curr = tableData[i];
+          if (!orig || !curr) continue;
+          // Find changed fields (excluding primary key)
+          const changed: Record<string, any> = {};
+          columns.forEach((col, idx) => {
+            if (col === pk) {
+              changed[col] = curr[col]; // always include PK for identification
+            } else if (curr[col] !== orig[col]) {
+              changed[col] = curr[col];
+            }
+          });
+          // Only push if at least one non-PK field changed
+          if (Object.keys(changed).length > 1) {
+            updates.push({ ...changed, _rowIndex: i }); // add row index for debug
+          }
+        }
+        // Validate that all updates have a non-empty PK value
+        const missingPKIndex = updates.findIndex((u) => u[pk] === undefined || u[pk] === null || u[pk] === '');
+        if (missingPKIndex !== -1) {
+          const badUpdate = updates[missingPKIndex];
+          console.error('Update error: missing PK value', { update: badUpdate, pk, updates });
+          toast({
+            title: 'Update Error',
+            description: `Row ${badUpdate._rowIndex + 1} is missing a value for the primary key column ('${pk}'). Please ensure all rows have a valid primary key value before saving.`,
+            variant: 'destructive',
+          });
+          setIsSaving(false);
+          return;
+        }
+        // Debug: log what is being sent for update, including PK values
+        updates.forEach((u, idx) => {
+          console.log(`Update row ${u._rowIndex + 1}: PK (${pk}) =`, u[pk], u);
+        });
+        // Remove _rowIndex before sending
+        const updatesToSend = updates.map(({ _rowIndex, ...rest }) => rest);
+        if (updatesToSend.length === 0) {
+          toast({
+            title: 'No Changes',
+            description: 'No changes to update.',
+            variant: 'destructive',
+          });
+          setIsSaving(false);
+          return;
+        }
+        // Dynamically import updateTableDataApi to avoid circular deps
+        const { updateTableDataApi } = await import('@/api/updateApi');
+        await updateTableDataApi(selectedDatabase, pk, updatesToSend);
+        // Refresh table data after successful update
+        try {
+          const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
+          setTableData(refreshedData.data);
+        } catch (refreshError) {
+          console.warn('Could not refresh data after update:', refreshError);
+        }
+        toast({
+          title: 'Success',
+          description: `${updatesToSend.length} row(s) updated successfully!`,
+        });
       }
-
-      // Validate and auto-fix data before sending
-      const fixedRows = validateAndAutoFixData(newRows, tableData.slice(0, originalDataLength));
-
-      // Use INSERT ONLY API with the fixed data
-      const result = await insertTableDataApi3(selectedDatabase, fixedRows);
-      
-      // Refresh table data after successful insert
-      try {
-        const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
-        setTableData(refreshedData.data); // Use .data property from TableDataResponse
-      } catch (refreshError) {
-        console.warn('Could not refresh data after insert:', refreshError);
-      }
-      
-      toast({
-        title: 'Success',
-        description: `${newRows.length} rows inserted successfully with auto-fix applied!`,
-      });
-      
     } catch (err: any) {
-      console.error('Insert error:', err);
-      
+      console.error('Save error:', err);
       if (err && err.detail) {
         let msg = '';
         if (Array.isArray(err.detail)) {
@@ -346,7 +437,7 @@ export const DataTable = () => {
         }
         setError(msg);
         toast({
-          title: 'Insert Error',
+          title: mode === 'update' ? 'Update Error' : 'Insert Error',
           description: msg,
           variant: 'destructive',
         });
@@ -358,10 +449,10 @@ export const DataTable = () => {
           variant: 'destructive',
         });
       } else {
-        setError('Failed to insert data. Please try again.');
+        setError('Failed to save data. Please try again.');
         toast({
           title: 'Error',
-          description: 'Failed to insert data. Please try again.',
+          description: 'Failed to save data. Please try again.',
           variant: 'destructive',
         });
       }
@@ -691,7 +782,7 @@ export const DataTable = () => {
                 {tableData.map((row, rowIndex) => (
                   <tr 
                     key={rowIndex}
-                    className="border-b border-table-border hover:bg-table-row-hover transition-smooth"
+                    className={`border-b border-table-border hover:bg-table-row-hover transition-smooth ${mode === 'insert' && rowIndex < originalDataLength ? 'pointer-events-none select-none' : ''}`}
                   >
                     {isEditMode && (
                       <td className="px-2 py-1 md:px-3 md:py-2 sticky left-0 bg-background z-15 border-r border-table-border">
@@ -720,14 +811,25 @@ export const DataTable = () => {
                               title={`Primary key is locked in Update mode`}
                             />
                           ) : (
-                            <Input
-                              value={row[column] || ''}
-                              onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
-                              onPaste={(e) => handlePaste(e, rowIndex, column)}
-                              className="border-input focus:border-primary transition-smooth text-xs md:text-sm"
-                              placeholder={`Enter ${column}`}
-                              title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
-                            />
+                            // If in insert mode and this is an original row, don't allow editing
+                            (mode === 'insert' && rowIndex < originalDataLength) ? (
+                              <Input
+                                value={row[column] || ''}
+                                readOnly
+                                disabled
+                                className="border-input bg-gray-100 text-xs md:text-sm"
+                                title={`Original rows are locked while adding new rows`}
+                              />
+                            ) : (
+                              <Input
+                                value={row[column] || ''}
+                                onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
+                                onPaste={(e) => handlePaste(e, rowIndex, column)}
+                                className="border-input focus:border-primary transition-smooth text-xs md:text-sm"
+                                placeholder={`Enter ${column}`}
+                                title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
+                              />
+                            )
                           )
                         ) : (
                           <span className="text-foreground">

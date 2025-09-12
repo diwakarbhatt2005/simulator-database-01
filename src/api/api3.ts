@@ -17,11 +17,12 @@ export interface BulkReplaceError {
 }
 
 export async function bulkReplaceTableDataApi3(tableName: string, data: any[]): Promise<BulkReplaceResponse> {
-  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/${encodeURIComponent(tableName)}/bulk-replace`;
+  // New API: POST /api/tables/insert with payload { table_name, data }
+  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/insert`;
   // Debug: log payload
-  console.log('API3 bulk replace payload:', { table_name: tableName, data });
+  console.log('API3 bulk replace (insert) payload:', { table_name: tableName, data });
   const response = await fetch(url, {
-    method: 'PUT',
+    method: 'POST',
     headers: {
       'accept': 'application/json',
       'Content-Type': 'application/json',
@@ -32,15 +33,20 @@ export async function bulkReplaceTableDataApi3(tableName: string, data: any[]): 
   // Debug: log response
   console.log('API3 bulk replace response:', response.status, resData);
   if (!response.ok) {
-    // Return error details for 400/422
-    // Always return error as an object with detail as array or string
-    if (resData && typeof resData.detail === 'string') {
-      throw { detail: resData.detail };
-    } else if (resData && Array.isArray(resData.detail)) {
-      throw { detail: resData.detail };
-    } else {
-      throw { detail: 'Unknown error occurred.' };
+    // Handle common backend error shapes
+    if (resData) {
+      if (typeof resData.detail === 'string') {
+        throw { detail: resData.detail, status: response.status };
+      }
+      if (Array.isArray(resData.detail)) {
+        // join validation errors into a readable string
+        const msg = resData.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+        throw { detail: msg, raw: resData.detail, status: response.status };
+      }
+      // fallback: include full response
+      throw { detail: JSON.stringify(resData), status: response.status };
     }
+    throw { detail: 'Unknown error occurred.', status: response.status };
   }
   // Notify on success
   if (typeof window !== 'undefined' && window?.alert) {
@@ -51,8 +57,8 @@ export async function bulkReplaceTableDataApi3(tableName: string, data: any[]): 
 
 // Keep the row-by-row insert function as well for compatibility
 export async function insertTableDataApi3(tableName: string, data: any[]): Promise<BulkReplaceResponse> {
-  // Use the bulk-replace endpoint which actually does bulk insert according to backend
-  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/${encodeURIComponent(tableName)}/bulk-replace`;
+  // Use the new insert endpoint
+  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/insert`;
   
   // Filter and clean the data
   const cleanData = data.filter(row => {
@@ -80,10 +86,10 @@ export async function insertTableDataApi3(tableName: string, data: any[]): Promi
     throw { detail: 'No valid data provided for insertion' };
   }
 
-  console.log('API3 bulk insert payload:', { table_name: tableName, data: cleanData });
-  
+  console.log('API3 bulk insert payload (insert endpoint):', { table_name: tableName, data: cleanData });
+
   const response = await fetch(url, {
-    method: 'PUT',
+    method: 'POST',
     headers: {
       'accept': 'application/json',
       'Content-Type': 'application/json',
@@ -95,13 +101,17 @@ export async function insertTableDataApi3(tableName: string, data: any[]): Promi
   console.log('API3 bulk insert response:', response.status, resData);
   
   if (!response.ok) {
-    if (resData && typeof resData.detail === 'string') {
-      throw { detail: resData.detail };
-    } else if (resData && Array.isArray(resData.detail)) {
-      throw { detail: resData.detail };
-    } else {
-      throw { detail: 'Bulk insert failed' };
+    if (resData) {
+      if (typeof resData.detail === 'string') {
+        throw { detail: resData.detail, status: response.status };
+      }
+      if (Array.isArray(resData.detail)) {
+        const msg = resData.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+        throw { detail: msg, raw: resData.detail, status: response.status };
+      }
+      throw { detail: JSON.stringify(resData), status: response.status };
     }
+    throw { detail: 'Bulk insert failed', status: response.status };
   }
 
   // Success notification
@@ -134,8 +144,8 @@ export interface InsertError {
 
 // Insert single row
 export async function insertSingleRow(tableName: string, rowData: any): Promise<InsertResponse> {
-  // Use bulk-replace endpoint for single row as well, since it's actually doing inserts
-  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/${encodeURIComponent(tableName)}/bulk-replace`;
+  // Use insert endpoint for single row
+  const url = `https://mentify.srv880406.hstgr.cloud/api/tables/insert`;
   
   // Filter out empty fields and remove 'id' field for auto-increment
   let cleanData = { ...rowData };
@@ -155,10 +165,10 @@ export async function insertSingleRow(tableName: string, rowData: any): Promise<
     throw { detail: 'No valid data provided for insertion' };
   }
 
-  console.log('Insert single row payload:', { table_name: tableName, data: [cleanData] });
-  
+  console.log('Insert single row payload (insert endpoint):', { table_name: tableName, data: [cleanData] });
+
   const response = await fetch(url, {
-    method: 'PUT',
+    method: 'POST',
     headers: {
       'accept': 'application/json',
       'Content-Type': 'application/json',
@@ -170,13 +180,17 @@ export async function insertSingleRow(tableName: string, rowData: any): Promise<
   console.log('Insert single row response:', response.status, resData);
   
   if (!response.ok) {
-    if (resData && typeof resData.detail === 'string') {
-      throw { detail: resData.detail };
-    } else if (resData && Array.isArray(resData.detail)) {
-      throw { detail: resData.detail };
-    } else {
-      throw { detail: 'Failed to insert row' };
+    if (resData) {
+      if (typeof resData.detail === 'string') {
+        throw { detail: resData.detail, status: response.status };
+      }
+      if (Array.isArray(resData.detail)) {
+        const msg = resData.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+        throw { detail: msg, raw: resData.detail, status: response.status };
+      }
+      throw { detail: JSON.stringify(resData), status: response.status };
     }
+    throw { detail: 'Failed to insert row', status: response.status };
   }
   
   // Success message
