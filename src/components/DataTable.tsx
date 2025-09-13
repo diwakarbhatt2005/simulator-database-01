@@ -61,6 +61,7 @@ export const DataTable = () => {
     setCsvError(null);
     const file = e.target.files?.[0];
     if (!file) return;
+    
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
@@ -68,25 +69,50 @@ export const DataTable = () => {
         setCsvError('Failed to read file.');
         return;
       }
-      // Parse CSV: first row = headers
+      
+      console.log('CSV file content:', text.substring(0, 200) + '...');
+      
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (lines.length < 2) {
         setCsvError('CSV must have a header and at least one data row.');
         return;
       }
-      const headers = lines[0].split(',').map(h => h.trim());
+      
+      // Parse headers
+      const headers = parseRow(lines[0], ',');
+      console.log('CSV headers:', headers);
+      console.log('Table columns:', columns);
+      
+      // Parse data rows
       const newRows = lines.slice(1).map(line => {
-        const cells = line.split(',');
+        const cells = parseRow(line, ',');
         const rowObj: Record<string, any> = {};
+        
+        // Map CSV data to table columns
         headers.forEach((h, i) => {
-          rowObj[h] = cells[i] || '';
+          const value = cells[i] || '';
+          // Try to match header to existing column
+          const matchingColumn = columns.find(col => 
+            col.toLowerCase() === h.toLowerCase() || 
+            col.toLowerCase().replace('_', '') === h.toLowerCase().replace('_', '')
+          );
+          if (matchingColumn) {
+            rowObj[matchingColumn] = value;
+          } else {
+            rowObj[h] = value;
+          }
         });
-        // Fill missing columns with ''
+        
+        // Fill missing columns with empty values
         columns.forEach(col => {
           if (!(col in rowObj)) rowObj[col] = '';
         });
+        
         return rowObj;
       });
+      
+      console.log('Parsed CSV rows:', newRows.length, newRows[0]);
+      
       addMultipleRows(newRows.length);
       setTimeout(() => {
         const startIdx = tableData.length;
@@ -98,6 +124,7 @@ export const DataTable = () => {
         toast({ title: 'CSV Upload Success', description: `Added ${newRows.length} rows from CSV.` });
       }, 200);
     };
+    
     reader.onerror = () => setCsvError('Failed to read file.');
     reader.readAsText(file);
   };
@@ -174,28 +201,50 @@ export const DataTable = () => {
 
   // commas/tabs inside balanced brackets/braces/parentheses as part of the field.
   const parseRow = (line: string, delim: string) => {
-    const result: string[] = [];
-    let cur = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-
-      if (ch === '"') {
-        inQuotes = !inQuotes;
-        continue;
+    // Simple but robust parsing for CSV data
+    if (delim === '\t') {
+      // Tab separated - simple split
+      return line.split('\t').map(cell => cell.trim());
+    } else {
+      // Comma separated - handle quotes properly
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      let i = 0;
+      
+      while (i < line.length) {
+        const char = line[i];
+        
+        if (char === '"' && (i === 0 || line[i-1] === ',' || line[i-1] === ' ')) {
+          // Start of quoted field
+          inQuotes = true;
+          i++;
+          continue;
+        }
+        
+        if (char === '"' && inQuotes && (i === line.length - 1 || line[i+1] === ',' || line[i+1] === ' ')) {
+          // End of quoted field
+          inQuotes = false;
+          i++;
+          continue;
+        }
+        
+        if (char === ',' && !inQuotes) {
+          // Field separator
+          result.push(current.trim());
+          current = '';
+          i++;
+          continue;
+        }
+        
+        current += char;
+        i++;
       }
-
-      if (ch === delim && !inQuotes) {
-        result.push(cur);
-        cur = '';
-      } else {
-        cur += ch;
-      }
+      
+      // Add the last field
+      result.push(current.trim());
+      return result;
     }
-
-    result.push(cur);
-    return result.map(cell => cell.trim().replace(/^"|"$/g, ''));
   };
 
   const findPrimaryAddressIndex = (cols: string[]) => {
@@ -211,17 +260,8 @@ export const DataTable = () => {
   const handlePaste = useCallback((e: React.ClipboardEvent, rowIndex: number, field: string) => {
     e.preventDefault();
     
-    // Ensure we're working with the current selected table
-    if (!selectedDatabase) {
-      toast({
-        title: "Paste Error",
-        description: "No table selected. Please select a table first.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
     const pastedData = e.clipboardData.getData('text');
+    console.log('Raw pasted data:', pastedData);
     
     const rows = pastedData.split('\n').filter(row => row.trim());
     
@@ -238,13 +278,14 @@ export const DataTable = () => {
     const hasTab = pastedData.includes('\t');
     const delimiter = hasTab ? '\t' : ',';
     
-    console.log('Pasting data:', { pastedData, delimiter, rowCount: rows.length });
+    console.log('Detected delimiter:', delimiter, 'Row count:', rows.length);
     
     // Calculate how many new rows we need
     const neededRows = Math.max(0, (rowIndex + rows.length) - tableData.length);
     
     // Add required rows all at once
     if (neededRows > 0) {
+      console.log('Adding', neededRows, 'new rows');
       addMultipleRows(neededRows);
     }
     
@@ -252,11 +293,12 @@ export const DataTable = () => {
     setTimeout(() => {
       let pastedCells = 0;
       const startFieldIndex = columns.indexOf(field);
+      console.log('Starting field index:', startFieldIndex, 'Field:', field);
 
       rows.forEach((row, rowOffset) => {
         // Parse the row using the detected delimiter
         const cells = parseRow(row, delimiter);
-        console.log('Parsed cells:', cells);
+        console.log(`Row ${rowOffset + 1} parsed into ${cells.length} cells:`, cells);
         
         const currentRowIndex = rowIndex + rowOffset;
         
@@ -264,16 +306,18 @@ export const DataTable = () => {
           const fieldIndex = startFieldIndex + cellIndex;
           const currentField = columns[fieldIndex];
           
-          if (currentField && fieldIndex < columns.length) {
+          if (currentField && fieldIndex >= 0 && fieldIndex < columns.length) {
             // In update mode, never modify the primary key (first column)
             if (mode === 'update' && currentField === columns[0]) {
               // skip primary key updates
               console.log('Skipping primary key update for:', currentField);
             } else {
-              console.log('Updating cell:', { currentRowIndex, currentField, cell });
+              console.log(`Updating [${currentRowIndex}][${currentField}] = "${cell}"`);
               updateCell(currentRowIndex, currentField, cell);
               pastedCells++;
             }
+          } else {
+            console.log('Skipping cell - field not found:', { fieldIndex, currentField, cellIndex, cell });
           }
         });
       });
@@ -283,7 +327,6 @@ export const DataTable = () => {
         description: `Pasted ${pastedCells} cells across ${rows.length} rows.`,
       });
     }, 200);
-  }, [columns, tableData, updateCell, addMultipleRows, toast, mode, selectedDatabase]);
   // Store original data length to block edit/delete (set only once after first data load)
   const [originalDataLength, setOriginalDataLength] = useState(0);
   useEffect(() => {
