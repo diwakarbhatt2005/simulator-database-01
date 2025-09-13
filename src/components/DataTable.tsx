@@ -1,10 +1,9 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ValidationError, fetchTableData, validateAndAutoFixData } from '@/api/tableData';
 import { bulkReplaceTableDataApi3, insertTableDataApi3 } from '@/api/api3';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { sendToWebhook } from '@/api/api4';
-import { useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -55,6 +54,54 @@ export const DataTable = () => {
   const [bulkPasteError, setBulkPasteError] = useState('');
   // Local mode: insert or update. Kept local so insertion logic remains unchanged.
   const [mode, setMode] = useState<'insert' | 'update' | null>(null);
+  // CSV upload state
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  // CSV upload handler
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCsvError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) {
+        setCsvError('Failed to read file.');
+        return;
+      }
+      // Parse CSV: first row = headers
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) {
+        setCsvError('CSV must have a header and at least one data row.');
+        return;
+      }
+      const headers = lines[0].split(',').map(h => h.trim());
+      const newRows = lines.slice(1).map(line => {
+        const cells = line.split(',');
+        const rowObj: Record<string, any> = {};
+        headers.forEach((h, i) => {
+          rowObj[h] = cells[i] || '';
+        });
+        // Fill missing columns with ''
+        columns.forEach(col => {
+          if (!(col in rowObj)) rowObj[col] = '';
+        });
+        return rowObj;
+      });
+      addMultipleRows(newRows.length);
+      setTimeout(() => {
+        const startIdx = tableData.length;
+        newRows.forEach((row, i) => {
+          columns.forEach(col => {
+            updateCell(startIdx + i, col, row[col]);
+          });
+        });
+        toast({ title: 'CSV Upload Success', description: `Added ${newRows.length} rows from CSV.` });
+      }, 200);
+    };
+    reader.onerror = () => setCsvError('Failed to read file.');
+    reader.readAsText(file);
+  };
   
   const {
     tableData,
@@ -560,10 +607,35 @@ export const DataTable = () => {
     );
   }
 
+
+  // Month selector and calculation button at the top
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const handleMonthCalc = () => {
+    // Add your calculation logic here
+    toast({ title: 'Month Calculation', description: `Calculation for ${selectedMonth || 'selected month'}` });
+  };
+
   return (
-  <div className="space-y-6">
+    <div className="space-y-6">
+      {/* Top controls: Month selector and calculation button */}
+      <div className="flex items-center space-x-2 mb-2">
+        <Input
+          type="month"
+          value={selectedMonth}
+          onChange={e => setSelectedMonth(e.target.value)}
+          className="h-8 text-xs md:text-sm"
+          style={{ width: 140 }}
+        />
+        <Button
+          variant="outline"
+          className="border-info text-info hover:bg-info hover:text-white transition-smooth"
+          onClick={handleMonthCalc}
+        >
+          Calculate Month Data
+        </Button>
+      </div>
       {/* Header */}
-  <Card className="bg-gradient-card shadow-card border-0">
+      <Card className="bg-gradient-card shadow-card border-0">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -574,7 +646,6 @@ export const DataTable = () => {
                 {tableData.length} records • {columns.length} columns
               </p>
             </div>
-            
             <div className="flex items-center space-x-2">
               {/* Mode selector: Insert or Update. Default null until user chooses. */}
               <Button
@@ -639,7 +710,7 @@ export const DataTable = () => {
 
       {/* Row Actions (only in edit mode) */}
       {isEditMode && (
-  <Card className="bg-gradient-card shadow-card border-0">
+        <Card className="bg-gradient-card shadow-card border-0">
           <CardContent className="pt-6">
             <div className="flex items-center space-x-2 flex-wrap">
               <Button
@@ -658,6 +729,25 @@ export const DataTable = () => {
                 <Plus className="w-4 h-4 mr-2" />
                 Bulk Add
               </Button>
+              {/* CSV Upload Button (Insert mode only) */}
+              {mode === 'insert' && (
+                <>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleCsvUpload}
+                  />
+                  <Button
+                    variant="outline"
+                    className="border-success text-success hover:bg-success hover:text-white transition-smooth"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Upload CSV
+                  </Button>
+                </>
+              )}
               <Button
                 onClick={resetToOriginal}
                 variant="outline"
@@ -666,33 +756,8 @@ export const DataTable = () => {
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Reset All
               </Button>
-              <Button
-                onClick={() => {
-                  // Example: sum all values in a column named 'amount' for the current month
-                  const now = new Date();
-                  const thisMonth = now.getMonth();
-                  const thisYear = now.getFullYear();
-                  let sum = 0;
-                  tableData.forEach(row => {
-                    // Try to find a date column
-                    const dateCol = Object.keys(row).find(k => k.toLowerCase().includes('date'));
-                    const amountCol = Object.keys(row).find(k => k.toLowerCase().includes('amount'));
-                    if (dateCol && amountCol && row[dateCol] && row[amountCol]) {
-                      const d = new Date(row[dateCol]);
-                      if (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
-                        const val = Number(row[amountCol]);
-                        if (!isNaN(val)) sum += val;
-                      }
-                    }
-                  });
-                  alert(`Total for this month: ${sum}`);
-                }}
-                variant="outline"
-                className="border-info text-info hover:bg-info hover:text-white transition-smooth"
-              >
-                Calculate Month Data
-              </Button>
             </div>
+            {csvError && <div className="text-red-500 text-xs mt-2">{csvError}</div>}
             {/* Bulk Add Modal */}
             {bulkModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
