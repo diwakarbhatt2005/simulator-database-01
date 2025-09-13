@@ -867,7 +867,7 @@ export const DataTable = () => {
                 {tableData.map((row, rowIndex) => (
                   <tr 
                     key={rowIndex}
-                    className={`border-b border-table-border hover:bg-table-row-hover transition-smooth ${mode === 'insert' && rowIndex < originalDataLength ? 'pointer-events-none select-none' : ''}`}
+                    className={`border-b border-table-border hover:bg-table-row-hover transition-smooth ${mode === 'insert' && rowIndex < originalDataLength ? 'opacity-60' : ''}`}
                   >
                     {isEditMode && (
                       <td className="px-2 py-1 md:px-3 md:py-2 sticky left-0 bg-background z-15 border-r border-table-border">
@@ -896,25 +896,16 @@ export const DataTable = () => {
                               title={`Primary key is locked in Update mode`}
                             />
                           ) : (
-                            // If in insert mode and this is an original row, don't allow editing
-                            (mode === 'insert' && rowIndex < originalDataLength) ? (
-                              <Input
-                                value={row[column] || ''}
-                                readOnly
-                                disabled
-                                className="border-input bg-gray-100 text-xs md:text-sm"
-                                title={`Original rows are locked while adding new rows`}
-                              />
-                            ) : (
-                              <Input
-                                value={row[column] || ''}
-                                onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
-                                onPaste={(e) => handlePaste(e, rowIndex, column)}
-                                className="border-input focus:border-primary transition-smooth text-xs md:text-sm"
-                                placeholder={`Enter ${column}`}
-                                title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
-                              />
-                            )
+                            <Input
+                              value={row[column] || ''}
+                              onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
+                              onPaste={(e) => handlePaste(e, rowIndex, column)}
+                              className="border-input focus:border-primary transition-smooth text-xs md:text-sm"
+                              placeholder={`Enter ${column}`}
+                              title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
+                              readOnly={mode === 'insert' && rowIndex < originalDataLength}
+                              disabled={mode === 'insert' && rowIndex < originalDataLength}
+                            />
                           )
                         ) : (
                           <span className="text-foreground">
