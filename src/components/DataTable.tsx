@@ -130,8 +130,11 @@ export const DataTable = () => {
       // Insert at the very top (index 0)
       const newTableData = [newRow, ...tableData];
       setTableData(newTableData);
-      // Update original data length to account for the new row
-      setOriginalDataLength(prev => prev + 1);
+      
+      toast({
+        title: "Row Added",
+        description: "New row added at the top. You can now enter data.",
+      });
     }
   };
 
@@ -352,10 +355,10 @@ export const DataTable = () => {
   // Store original data length to block edit/delete (set only once after first data load)
   const [originalDataLength, setOriginalDataLength] = useState(0);
   useEffect(() => {
-    if (originalDataLength === 0 && tableData.length > 0) {
+    if (originalDataLength === 0 && tableData.length > 0 && !isEditMode) {
       setOriginalDataLength(tableData.length);
     }
-  }, [tableData, originalDataLength]);
+  }, [tableData, originalDataLength, isEditMode]);
 
   const handleSave = async () => {
     if (!selectedDatabase || typeof selectedDatabase !== 'string' || !selectedDatabase.trim()) {
@@ -867,7 +870,11 @@ export const DataTable = () => {
                 {tableData.map((row, rowIndex) => (
                   <tr 
                     key={rowIndex}
-                    className={`border-b border-table-border hover:bg-table-row-hover transition-smooth ${mode === 'insert' && rowIndex < originalDataLength ? 'opacity-60' : ''}`}
+                    className={`border-b border-table-border transition-smooth ${
+                      mode === 'insert' && rowIndex < originalDataLength 
+                        ? 'opacity-60 bg-gray-50' 
+                        : 'hover:bg-table-row-hover'
+                    }`}
                   >
                     {isEditMode && (
                       <td className="px-2 py-1 md:px-3 md:py-2 sticky left-0 bg-background z-15 border-r border-table-border">
@@ -900,11 +907,14 @@ export const DataTable = () => {
                               value={row[column] || ''}
                               onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
                               onPaste={(e) => handlePaste(e, rowIndex, column)}
-                              className="border-input focus:border-primary transition-smooth text-xs md:text-sm"
+                              className={`border-input focus:border-primary transition-smooth text-xs md:text-sm ${
+                                mode === 'insert' && rowIndex < originalDataLength 
+                                  ? 'bg-gray-50 text-gray-500' 
+                                  : 'bg-white'
+                              }`}
                               placeholder={`Enter ${column}`}
                               title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
                               readOnly={mode === 'insert' && rowIndex < originalDataLength}
-                              disabled={mode === 'insert' && rowIndex < originalDataLength}
                             />
                           )
                         ) : (
