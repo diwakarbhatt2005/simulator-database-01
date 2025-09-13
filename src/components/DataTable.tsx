@@ -259,17 +259,8 @@ export const DataTable = () => {
     const sampleRow = rows[0];
     const delimiterGuess = hasTab ? '\t' : ',';
     
-    // Paste behavior depends on mode:
-    // - insert: only allow pasting into new rows (preserve existing insert flow)
-    // - update: allow pasting into existing rows (but do not change primary key)
-    if (mode !== 'update' && rowIndex < originalDataLength) {
-      toast({
-        title: "Paste Not Allowed",
-        description: "You can only paste data in new rows while in Insert mode.",
-        variant: "destructive",
-      });
-      return;
-    }
+    // In insert mode, allow pasting in any row (new rows are at the top now)
+    // In update mode, allow pasting in existing rows but protect primary key
     
     // Calculate how many new rows we need
     const neededRows = Math.max(0, (rowIndex + rows.length) - tableData.length);
@@ -351,7 +342,7 @@ export const DataTable = () => {
         description: `Pasted ${pastedCells} cells across ${rows.length} rows.${truncatedCells > 0 ? ` ${truncatedCells} cells were truncated.` : ''}`,
       });
     }, 200);
-  }, [columns, tableData, updateCell, addMultipleRows, toast]);
+  }, [columns, tableData, updateCell, addMultipleRows, toast, mode, selectedDatabase]);
   // Store original data length to block edit/delete (set only once after first data load)
   const [originalDataLength, setOriginalDataLength] = useState(0);
   useEffect(() => {
@@ -870,15 +861,18 @@ export const DataTable = () => {
                 {tableData.map((row, rowIndex) => (
                   <tr 
                     key={rowIndex}
-                    className={`border-b border-table-border transition-smooth ${
-                      mode === 'insert' && rowIndex < originalDataLength 
-                        ? 'opacity-60 bg-gray-50' 
-                        : 'hover:bg-table-row-hover'
-                    }`}
+                    className="border-b border-table-border transition-smooth hover:bg-table-row-hover"
                   >
                     {isEditMode && (
                       <td className="px-2 py-1 md:px-3 md:py-2 sticky left-0 bg-background z-15 border-r border-table-border">
-                        {(mode === 'insert' || rowIndex >= originalDataLength) && (
+                        <Button
+                          onClick={() => deleteRow(rowIndex)}
+                          size="sm"
+                          variant="outline"
+                          className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-smooth"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
                           <Button
                             onClick={() => deleteRow(rowIndex)}
                             size="sm"
@@ -887,7 +881,6 @@ export const DataTable = () => {
                           >
                             <Trash2 className="w-3 h-3" />
                           </Button>
-                        )}
                       </td>
                     )}
                     {columns.map((column, colIndex) => (
@@ -907,14 +900,10 @@ export const DataTable = () => {
                               value={row[column] || ''}
                               onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
                               onPaste={(e) => handlePaste(e, rowIndex, column)}
-                              className={`border-input focus:border-primary transition-smooth text-xs md:text-sm ${
-                                mode === 'insert' && rowIndex < originalDataLength 
-                                  ? 'bg-gray-50 text-gray-500' 
-                                  : 'bg-white'
-                              }`}
+                              className="border-input focus:border-primary transition-smooth text-xs md:text-sm bg-white"
                               placeholder={`Enter ${column}`}
                               title={`Paste data here to auto-fill multiple cells. Row ${rowIndex + 1}, Column: ${column}`}
-                              readOnly={mode === 'insert' && rowIndex < originalDataLength}
+                              readOnly={mode === 'insert' && rowIndex >= originalDataLength && rowIndex < tableData.length - (tableData.length - originalDataLength)}
                             />
                           )
                         ) : (
