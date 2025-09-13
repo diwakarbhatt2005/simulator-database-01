@@ -61,7 +61,6 @@ export const DataTable = () => {
     setCsvError(null);
     const file = e.target.files?.[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
@@ -69,50 +68,25 @@ export const DataTable = () => {
         setCsvError('Failed to read file.');
         return;
       }
-      
-      console.log('CSV file content:', text.substring(0, 200) + '...');
-      
+      // Parse CSV: first row = headers
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       if (lines.length < 2) {
         setCsvError('CSV must have a header and at least one data row.');
         return;
       }
-      
-      // Parse headers
-      const headers = parseRow(lines[0], ',');
-      console.log('CSV headers:', headers);
-      console.log('Table columns:', columns);
-      
-      // Parse data rows
+      const headers = lines[0].split(',').map(h => h.trim());
       const newRows = lines.slice(1).map(line => {
-        const cells = parseRow(line, ',');
+        const cells = line.split(',');
         const rowObj: Record<string, any> = {};
-        
-        // Map CSV data to table columns
         headers.forEach((h, i) => {
-          const value = cells[i] || '';
-          // Try to match header to existing column
-          const matchingColumn = columns.find(col => 
-            col.toLowerCase() === h.toLowerCase() || 
-            col.toLowerCase().replace('_', '') === h.toLowerCase().replace('_', '')
-          );
-          if (matchingColumn) {
-            rowObj[matchingColumn] = value;
-          } else {
-            rowObj[h] = value;
-          }
+          rowObj[h] = cells[i] || '';
         });
-        
-        // Fill missing columns with empty values
+        // Fill missing columns with ''
         columns.forEach(col => {
           if (!(col in rowObj)) rowObj[col] = '';
         });
-        
         return rowObj;
       });
-      
-      console.log('Parsed CSV rows:', newRows.length, newRows[0]);
-      
       addMultipleRows(newRows.length);
       setTimeout(() => {
         const startIdx = tableData.length;
@@ -124,7 +98,6 @@ export const DataTable = () => {
         toast({ title: 'CSV Upload Success', description: `Added ${newRows.length} rows from CSV.` });
       }, 200);
     };
-    
     reader.onerror = () => setCsvError('Failed to read file.');
     reader.readAsText(file);
   };
