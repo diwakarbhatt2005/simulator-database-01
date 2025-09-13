@@ -366,21 +366,29 @@ export const DataTable = () => {
       });
       return;
     }
-    if (!columns || columns.length === 0 || !columns[0] || typeof columns[0] !== 'string' || !columns[0].trim()) {
+    
+    if (!mode) {
       toast({
-        title: 'Save Error',
-        description: 'Primary key column is missing or invalid. Please check your table structure.',
+        title: 'Mode Selection Required',
+        description: 'Please select Insert or Update mode before saving.',
         variant: 'destructive',
       });
       return;
     }
+
     try {
       setIsSaving(true);
       setError(null);
 
       if (mode === 'insert') {
         // INSERT MODE: Only new rows (after original data length)
-        const newRows = tableData.slice(originalDataLength);
+        const newRows = tableData.filter((row, index) => {
+          // Check if this is a new row (has empty or auto-generated values)
+          const isNewRow = index >= originalDataLength || 
+            Object.values(row).some(value => value === '' || value === null || value === undefined);
+          return isNewRow;
+        });
+        
         if (newRows.length === 0) {
           toast({
             title: 'No New Data',
@@ -390,33 +398,57 @@ export const DataTable = () => {
           setIsSaving(false);
           return;
         }
-        const fixedRows = validateAndAutoFixData(newRows, tableData.slice(0, originalDataLength));
-        const result = await insertTableDataApi3(selectedDatabase, fixedRows);
-        // Refresh table data after successful insert
-        try {
-          const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
-          setTableData(refreshedData.data);
-        } catch (refreshError) {
-          console.warn('Could not refresh data after insert:', refreshError);
-        }
-        toast({
-          title: 'Success',
-          description: `${newRows.length} rows inserted successfully with auto-fix applied!`,
+        
+        // Filter out completely empty rows
+        const validNewRows = newRows.filter(row => {
+          return Object.values(row).some(value => 
+            value !== '' && value !== null && value !== undefined
+          );
         });
-      } else if (mode === 'update') {
-        sonnerToast.success('Update mode activated', {
-          duration: 4000,
-        });
-        const pk = columns[0];
-        if (!pk || typeof pk !== 'string' || !pk.trim()) {
+        
+        if (validNewRows.length === 0) {
           toast({
-            title: 'Update Error',
-            description: 'Primary key column is missing or invalid. Cannot update.',
+            title: 'No Valid Data',
+            description: 'Please fill in at least one field in the new rows.',
             variant: 'destructive',
           });
           setIsSaving(false);
           return;
         }
+
+        console.log('Inserting rows:', validNewRows);
+        const result = await insertTableDataApi3(selectedDatabase, validNewRows);
+        
+        // Refresh table data after successful insert
+        try {
+          const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
+          setTableData(refreshedData.data);
+          setOriginalDataLength(refreshedData.data.length);
+        } catch (refreshError) {
+          console.warn('Could not refresh data after insert:', refreshError);
+        }
+        
+        toast({
+          title: 'Success',
+          description: `${validNewRows.length} rows inserted successfully!`,
+        });
+        
+        // Reset mode after successful insert
+        setMode(null);
+        setEditMode(false);
+        
+      } else if (mode === 'update') {
+        if (!columns || columns.length === 0 || !columns[0] || typeof columns[0] !== 'string' || !columns[0].trim()) {
+          toast({
+            title: 'Save Error',
+            description: 'Primary key column is missing or invalid. Please check your table structure.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        const pk = columns[0];
+        
         // Only send rows that have changed (diff originalData vs tableData)
         // Try to get originalData from store, fallback to local copy
         let originalRows = [];
@@ -477,14 +509,19 @@ export const DataTable = () => {
         try {
           const refreshedData = await fetchTableData(selectedDatabase, 1000, 0);
           setTableData(refreshedData.data);
+          setOriginalDataLength(refreshedData.data.length);
         } catch (refreshError) {
           console.warn('Could not refresh data after update:', refreshError);
         }
+        
         toast({
           title: 'Success',
           description: `${updatesToSend.length} row(s) updated successfully!`,
         });
-        // Show success notification for inserts
+        
+        // Reset mode after successful update
+        setMode(null);
+        setEditMode(false);
       }
     } catch (err: any) {
       console.error('Save error:', err);
@@ -633,17 +670,17 @@ export const DataTable = () => {
               {/* Mode selector: Insert or Update. Default null until user chooses. */}
               <Button
                 size="sm"
-                variant={mode === 'insert' ? 'ghost' : 'outline'}
+                variant={mode === 'insert' ? 'default' : 'outline'}
                 onClick={() => { setMode('insert'); setEditMode(true); }}
-                className={`${mode === 'insert' ? 'bg-accent text-white' : ''}`}
+                className={`${mode === 'insert' ? 'bg-green-600 hover:bg-green-700 text-white' : 'hover:bg-green-50 hover:text-green-700'}`}
               >
                 Insert
               </Button>
               <Button
                 size="sm"
-                variant={mode === 'update' ? 'ghost' : 'outline'}
+                variant={mode === 'update' ? 'default' : 'outline'}
                 onClick={() => { setMode('update'); setEditMode(true); }}
-                className={`${mode === 'update' ? 'bg-primary text-white' : ''}`}
+                className={`${mode === 'update' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'hover:bg-blue-50 hover:text-blue-700'}`}
               >
                 Update
               </Button>
@@ -834,7 +871,7 @@ export const DataTable = () => {
                   >
                     {isEditMode && (
                       <td className="px-2 py-1 md:px-3 md:py-2 sticky left-0 bg-background z-15 border-r border-table-border">
-                        {rowIndex >= originalDataLength && (
+                        {(mode === 'insert' || rowIndex >= originalDataLength) && (
                           <Button
                             onClick={() => deleteRow(rowIndex)}
                             size="sm"
