@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ValidationError, fetchTableData, validateAndAutoFixData } from '@/api/tableData';
 import { bulkReplaceTableDataApi3, insertTableDataApi3 } from '@/api/api3';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { sendToWebhook } from '@/api/api4';
 import { Input } from '@/components/ui/input';
@@ -19,9 +18,9 @@ import {
 import { useDashboardStore } from '@/store/dashboardStore';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 export const DataTable = () => {
-  // ...existing code...
   const [chatInput, setChatInput] = useState('');
   const [chatResponse, setChatResponse] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -52,7 +51,7 @@ export const DataTable = () => {
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkPasteValue, setBulkPasteValue] = useState('');
   const [bulkPasteError, setBulkPasteError] = useState('');
-  // Local mode: insert or update. Kept local so insertion logic remains unchanged.
+  
   const [mode, setMode] = useState<'insert' | 'update' | null>(null);
   // CSV upload state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -112,6 +111,33 @@ export const DataTable = () => {
     updateCell,
     addRow,
     addMultipleRows,
+    insertRowAtTop,
+  } = useDashboardStore();
+
+  // Enhanced addRow function that adds at the top
+  const handleAddRowAtTop = () => {
+    if (tableData.length > 0) {
+      const firstRow = tableData[0];
+      const newRow: Record<string, any> = {};
+      Object.keys(firstRow).forEach(key => {
+        if (key === 'id') {
+          const maxId = Math.max(0, ...tableData.map(r => Number(r.id) || 0));
+          newRow[key] = String(maxId + 1);
+        } else {
+          newRow[key] = '';
+        }
+      });
+      // Insert at the beginning after original data
+      const newTableData = [
+        ...tableData.slice(0, originalDataLength),
+        newRow,
+        ...tableData.slice(originalDataLength)
+      ];
+      setTableData(newTableData);
+    }
+  };
+
+  const {
     addColumn,
     deleteRow,
     renameColumn,
@@ -121,7 +147,6 @@ export const DataTable = () => {
     setTableData,
   } = useDashboardStore();
 
-  // Remove all local validation logic from handleCellChange
   const handleCellChange = (rowIndex: number, field: string, value: any) => {
     // In update mode, prevent changing the primary key (first column)
     if (mode === 'update' && columns.length > 0 && field === columns[0]) {
@@ -146,7 +171,6 @@ export const DataTable = () => {
     return [...firstRowKeys, ...Array.from(extra)];
   }, [tableData]);
 
-  // Robust CSV/TSV row parser: respects quoted fields and also keeps
   // commas/tabs inside balanced brackets/braces/parentheses as part of the field.
   const parseRow = (line: string, delim: string) => {
     const result: string[] = [];
@@ -194,7 +218,6 @@ export const DataTable = () => {
     return result.map(cell => cell.trim());
   };
 
-  // Find primary address-like column index (prefer exact 'address' or 'addr')
   const findPrimaryAddressIndex = (cols: string[]) => {
     const lower = cols.map(c => c.toLowerCase());
     // prefer exact matches
@@ -220,7 +243,6 @@ export const DataTable = () => {
     
     const pastedData = e.clipboardData.getData('text');
     
-  // Support both tab and comma separated data
   const rows = pastedData.split('\n').filter(row => row.trim());
     
     if (rows.length === 0) {
@@ -232,12 +254,9 @@ export const DataTable = () => {
       return;
     }
     
-  // Validate and detect delimiter preference: prefer tabs (Excel/Sheets).
   const hasTab = pastedData.includes('\t');
   const sampleRow = rows[0];
   const delimiterGuess = hasTab ? '\t' : ',';
-
-  // use shared parseRow above
     
     // Paste behavior depends on mode:
     // - insert: only allow pasting into new rows (preserve existing insert flow)
@@ -269,7 +288,6 @@ export const DataTable = () => {
         // Choose parsing strategy per row: prefer tabs; only split on commas
         // if parsed fields fit within available columns. If parsed CSV
         // produces more tokens than available columns, try to merge the
-        // extra tokens into a likely "address-like" column so address
         // fragments containing commas stay together.
         let cells: string[] = [];
         if (hasTab) {
@@ -333,7 +351,6 @@ export const DataTable = () => {
       });
     }, 200);
   }, [columns, tableData, updateCell, addMultipleRows, toast]);
-
   // Store original data length to block edit/delete (set only once after first data load)
   const [originalDataLength, setOriginalDataLength] = useState(0);
   useEffect(() => {
@@ -342,7 +359,6 @@ export const DataTable = () => {
     }
   }, [tableData, originalDataLength]);
 
-  // INSERT ONLY - Auto-fix and add new rows
   const handleSave = async () => {
     if (!selectedDatabase || typeof selectedDatabase !== 'string' || !selectedDatabase.trim()) {
       toast({
@@ -376,7 +392,6 @@ export const DataTable = () => {
           setIsSaving(false);
           return;
         }
-        // Validate and auto-fix data before sending
         const fixedRows = validateAndAutoFixData(newRows, tableData.slice(0, originalDataLength));
         const result = await insertTableDataApi3(selectedDatabase, fixedRows);
         // Refresh table data after successful insert
@@ -391,7 +406,8 @@ export const DataTable = () => {
           description: `${newRows.length} rows inserted successfully with auto-fix applied!`,
         });
       } else if (mode === 'update') {
-        // Defensive: block if PK column is not present
+          duration: 4000,
+        });
         const pk = columns[0];
         if (!pk || typeof pk !== 'string' || !pk.trim()) {
           toast({
@@ -402,7 +418,6 @@ export const DataTable = () => {
           setIsSaving(false);
           return;
         }
-        // UPDATE MODE: Only update original rows (not new rows)
         // Only send rows that have changed (diff originalData vs tableData)
         // Try to get originalData from store, fallback to local copy
         let originalRows = [];
@@ -411,7 +426,6 @@ export const DataTable = () => {
         } else {
           originalRows = tableData.slice(0, originalDataLength);
         }
-        const updates = [];
         for (let i = 0; i < originalRows.length; i++) {
           const orig = originalRows[i];
           const curr = tableData[i];
@@ -427,7 +441,6 @@ export const DataTable = () => {
           });
           // Only push if at least one non-PK field changed
           if (Object.keys(changed).length > 1) {
-            updates.push({ ...changed, _rowIndex: i }); // add row index for debug
           }
         }
         // Validate that all updates have a non-empty PK value
@@ -443,7 +456,6 @@ export const DataTable = () => {
           setIsSaving(false);
           return;
         }
-        // Debug: log what is being sent for update, including PK values
         updates.forEach((u, idx) => {
           console.log(`Update row ${u._rowIndex + 1}: PK (${pk}) =`, u[pk], u);
         });
@@ -458,7 +470,6 @@ export const DataTable = () => {
           setIsSaving(false);
           return;
         }
-        // Dynamically import updateTableDataApi to avoid circular deps
         const { updateTableDataApi } = await import('@/api/updateApi');
         await updateTableDataApi(selectedDatabase, pk, updatesToSend);
         // Refresh table data after successful update
@@ -472,6 +483,7 @@ export const DataTable = () => {
           title: 'Success',
           description: `${updatesToSend.length} row(s) updated successfully!`,
         });
+        // Show success notification for inserts
       }
     } catch (err: any) {
       console.error('Save error:', err);
@@ -508,8 +520,6 @@ export const DataTable = () => {
     }
   };
 
-  // ...existing code remains; update logic was removed per request
-
   const handleColumnRename = (oldName: string, newName: string) => {
     if (newName.trim() && newName !== oldName) {
       renameColumn(oldName, newName);
@@ -521,8 +531,6 @@ export const DataTable = () => {
     setEditingColumn(null);
     setNewColumnName('');
   };
-
-
   // Bulk Add logic
   const handleBulkAdd = () => {
     setBulkPasteValue('');
@@ -532,7 +540,6 @@ export const DataTable = () => {
 
   const handleBulkPaste = () => {
     setBulkPasteError('');
-    const lines = bulkPasteValue.trim().split(/\r?\n/).filter(l => l.trim());
     if (lines.length === 0) {
       setBulkPasteError('No data found.');
       return;
@@ -541,7 +548,6 @@ export const DataTable = () => {
       setBulkPasteError('You can paste up to 500 rows at once.');
       return;
     }
-    const hasTab = bulkPasteValue.includes('\t');
     const newRows = lines.map(line => {
       let cells: string[] = [];
       if (hasTab) {
@@ -551,7 +557,6 @@ export const DataTable = () => {
         const neededCols = columns.length;
         if (csvParsed.length === neededCols) {
           cells = csvParsed;
-        } else if (csvParsed.length < neededCols) {
           cells = [...csvParsed];
         } else {
           // merge extras into address-like column
@@ -576,7 +581,6 @@ export const DataTable = () => {
           cells = mapped;
         }
       }
-      const rowObj = {} as Record<string, any>;
       columns.forEach((col, i) => {
         rowObj[col] = cells[i] || '';
       });
@@ -584,7 +588,6 @@ export const DataTable = () => {
     });
     addMultipleRows(newRows.length);
     setTimeout(() => {
-      // Fill new rows
       const startIdx = tableData.length;
       newRows.forEach((row, i) => {
         columns.forEach(col => {
@@ -599,7 +602,6 @@ export const DataTable = () => {
     }, 200);
   };
 
-  if (tableData.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">No data available</p>
@@ -607,33 +609,8 @@ export const DataTable = () => {
     );
   }
 
-
-  // Month selector and calculation button at the top
-  const [selectedMonth, setSelectedMonth] = useState('');
-  const handleMonthCalc = () => {
-    // Add your calculation logic here
-    toast({ title: 'Month Calculation', description: `Calculation for ${selectedMonth || 'selected month'}` });
-  };
-
   return (
     <div className="space-y-6">
-      {/* Top controls: Month selector and calculation button */}
-      <div className="flex items-center space-x-2 mb-2">
-        <Input
-          type="month"
-          value={selectedMonth}
-          onChange={e => setSelectedMonth(e.target.value)}
-          className="h-8 text-xs md:text-sm"
-          style={{ width: 140 }}
-        />
-        <Button
-          variant="outline"
-          className="border-info text-info hover:bg-info hover:text-white transition-smooth"
-          onClick={handleMonthCalc}
-        >
-          Calculate Month Data
-        </Button>
-      </div>
       {/* Header */}
       <Card className="bg-gradient-card shadow-card border-0">
         <CardHeader>
@@ -714,7 +691,7 @@ export const DataTable = () => {
           <CardContent className="pt-6">
             <div className="flex items-center space-x-2 flex-wrap">
               <Button
-                onClick={addRow}
+                onClick={handleAddRowAtTop}
                 variant="outline"
                 className="border-accent text-accent hover:bg-accent hover:text-white transition-smooth"
               >
@@ -782,9 +759,9 @@ export const DataTable = () => {
       )}
 
       {/* Data Table */}
-  <Card className="bg-gradient-card shadow-card border-0">
+      <Card className="bg-gradient-card shadow-card border-0">
         <CardContent className="p-0">
-          <div className="overflow-x-auto max-h-[70vh] relative">
+          <div className="overflow-auto max-h-[600px] max-w-full relative border rounded-lg">
             <table className="min-w-max w-full border-separate border-spacing-0 text-xs md:text-sm">
               <thead className="sticky top-0 bg-table-header text-white z-10 shadow-md">
                 <tr>
@@ -918,36 +895,6 @@ export const DataTable = () => {
           )}
         </CardContent>
       </Card>
-    {/* ...existing code... */}
-
-    {/* Chatbot Assistant UI */}
-    <Card className="mt-6 bg-gradient-card shadow-card border-0">
-      <CardHeader>
-        <CardTitle className="text-lg font-bold">Chatbot Assistant</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col md:flex-row items-stretch gap-2">
-          <Input
-            ref={chatInputRef}
-            value={chatInput}
-            onChange={e => setChatInput(e.target.value)}
-            placeholder="Ask a question..."
-            className="flex-1"
-            disabled={chatLoading}
-            onKeyDown={e => { if (e.key === 'Enter') handleAskChatbot(); }}
-          />
-          <Button onClick={handleAskChatbot} disabled={chatLoading || !chatInput.trim()}>
-            {chatLoading ? "Asking..." : "Ask"}
-          </Button>
-        </div>
-        {chatError && <div className="text-red-500 mt-2">{chatError}</div>}
-        {chatResponse && (
-          <div className="mt-3 p-3 rounded bg-muted text-foreground border">
-            <strong>Response:</strong> {chatResponse}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  </div>
+    </div>
   );
 };

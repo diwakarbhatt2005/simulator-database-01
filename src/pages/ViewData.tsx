@@ -1,21 +1,20 @@
 // import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-// import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { DataTable } from '@/components/DataTable';
-// import { ChatBot } from '@/components/ChatBot';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { fetchTableData, ValidationError } from '@/api/tableData';
 
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import React, { useState, useEffect, useRef } from 'react';
 import { sendToWebhook } from '@/api/api4';
 import { MessageCircle, Mic, Send, X, Bot, User, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 const ViewData = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     selectedDatabase,
     setTableData,
@@ -54,26 +53,36 @@ const ViewData = () => {
     fetchData();
   }, [selectedDatabase, navigate, setTableData, setLoading, setError]);
 
-  // --- Month/Year State and Logic ---
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const [selectedYear, setSelectedYear] = useState<string | null>(null);
-  const [showYearDialog, setShowYearDialog] = useState(false);
-
-  // Open year dialog when month is selected
-  useEffect(() => {
-    if (selectedMonth) setShowYearDialog(true);
-  }, [selectedMonth]);
+  // Month/Year State for Calculate Month End Data
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedYear, setSelectedYear] = useState('');
 
   // Example calculation handler
-  function handleCalculate(month: string, year: string) {
+  const handleCalculate = () => {
+    if (!selectedMonth || !selectedYear) {
+      toast({
+        title: "Missing Information",
+        description: "Please select both month and year before calculating.",
+        variant: "destructive",
+      });
+      return;
+    }
     // TODO: Replace with your actual calculation logic
-    alert(`Calculating data for ${month}-${year}`);
+    toast({
+      title: "Calculation Started",
+      description: `Calculating month end data for ${getMonthName(selectedMonth)} ${selectedYear}`,
+    });
+  };
+
+  const getMonthName = (monthNumber: string) => {
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    return months[parseInt(monthNumber) - 1] || '';
   }
 
-  // --- End Month/Year State and Logic ---
-
   // Floating Action Button and Chat Popup with text & voice input
-  // --- ChatFab component moved above usage ---
   const ChatFab = () => {
     const [open, setOpen] = useState(false);
     const [message, setMessage] = useState('');
@@ -260,62 +269,41 @@ const ViewData = () => {
         </div>
       </div>
 
-      {/* Calculate Month Data Section */}
+      {/* Calculate Month End Data Section */}
       <div className="max-w-7xl mx-auto px-6 pt-8 pb-2">
-        <div className="flex items-center gap-4">
-          <span className="font-semibold">Calculate Month Data:</span>
-          <Select onValueChange={(month) => setSelectedMonth(month)}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Select Month" />
-            </SelectTrigger>
-            <SelectContent>
-              {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, idx) => (
-                <SelectItem key={m} value={String(idx+1).padStart(2,'0')}>{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Dialog open={showYearDialog} onOpenChange={setShowYearDialog}>
-            <DialogTrigger asChild>
-              <div />
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Select Year</DialogTitle>
-              </DialogHeader>
-              <div className="flex flex-col gap-4 mt-2">
-                <select
-                  className="border rounded px-3 py-2 text-base"
-                  value={selectedYear || ''}
-                  onChange={e => setSelectedYear(e.target.value)}
-                >
-                  <option value="" disabled>Select year</option>
-                  {Array.from({length: (new Date().getFullYear() - 2020 + 1)}, (_,i) => 2020 + i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <DialogFooter>
-                  <Button
-                    onClick={() => {
-                      setShowYearDialog(false);
-                      if (selectedMonth && selectedYear) {
-                        handleCalculate(selectedMonth, selectedYear);
-                      }
-                    }}
-                    disabled={!selectedYear}
-                  >
-                    Calculate
-                  </Button>
-                </DialogFooter>
-              </div>
-            </DialogContent>
-          </Dialog>
-          {/* Test Calculation Button */}
-          <Button
-            variant="outline"
-            onClick={() => alert('Test calculation triggered!')}
-            className="ml-2"
+        <div className="flex items-center gap-3">
+          <span className="font-semibold text-foreground">Calculate Month End Data:</span>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
-            Test Calculation
+            <option value="">Select Month</option>
+            <option value="01">January</option>
+            <option value="02">February</option>
+            <option value="03">March</option>
+            <option value="04">April</option>
+            <option value="05">May</option>
+            <option value="06">June</option>
+            <option value="07">July</option>
+            <option value="08">August</option>
+            <option value="09">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+          <Input
+            type="text"
+            placeholder="Enter Year (e.g., 2024)"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="w-48"
+          />
+          <Button
+            onClick={handleCalculate}
+            className="bg-gradient-primary hover:bg-primary-hover text-white"
+          >
+            Calculate
           </Button>
         </div>
       </div>
@@ -325,8 +313,8 @@ const ViewData = () => {
         <DataTable />
       </div>
 
-  {/* Floating Action Button for Chatbot */}
-  <ChatFab />
+      {/* Floating Action Button for Chatbot */}
+      <ChatFab />
     </div>
   );
 };

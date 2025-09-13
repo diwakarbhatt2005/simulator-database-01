@@ -31,6 +31,7 @@ export interface DashboardState {
   updateCell: (rowIndex: number, field: string, value: any) => void;
   addRow: () => void;
   addMultipleRows: (count: number) => void;
+  insertRowAtTop: () => void;
   addColumn: (columnName: string) => void;
   deleteRow: (rowIndex: number) => void;
   renameColumn: (oldName: string, newName: string) => void;
@@ -101,6 +102,25 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const newTableData = [...tableData, newRow];
       set({ tableData: newTableData });
       console.log('Added row, new length:', newTableData.length);
+    }
+  },
+  
+  insertRowAtTop: () => {
+    const { tableData } = get();
+    if (tableData.length > 0) {
+      const firstRow = tableData[0];
+      const newRow: DatabaseRow = {};
+      Object.keys(firstRow).forEach(key => {
+        if (key === 'id') {
+          const maxId = Math.max(0, ...tableData.map(r => Number(r.id) || 0));
+          newRow[key] = String(maxId + 1);
+        } else {
+          newRow[key] = '';
+        }
+      });
+      // Insert at the top (index 0)
+      const newTableData = [newRow, ...tableData];
+      set({ tableData: newTableData });
     }
   },
   
