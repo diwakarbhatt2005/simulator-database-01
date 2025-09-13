@@ -177,37 +177,16 @@ export const DataTable = () => {
     const result: string[] = [];
     let cur = '';
     let inQuotes = false;
-    let bracketDepth = 0; // []
-    let braceDepth = 0;   // {}
-    let parenDepth = 0;   // ()
 
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
 
       if (ch === '"') {
-        // handle escaped quotes inside quotes
-        if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-          cur += '"';
-          i++; // skip escaped quote
-          continue;
-        }
         inQuotes = !inQuotes;
-        cur += ch; // keep quotes for later trimming if needed
         continue;
       }
 
-      if (!inQuotes) {
-        if (ch === '[') bracketDepth++;
-        else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
-        else if (ch === '{') braceDepth++;
-        else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
-        else if (ch === '(') parenDepth++;
-        else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
-      }
-
-      const nested = bracketDepth > 0 || braceDepth > 0 || parenDepth > 0;
-
-      if (ch === delim && !inQuotes && !nested) {
+      if (ch === delim && !inQuotes) {
         result.push(cur);
         cur = '';
       } else {
@@ -216,7 +195,7 @@ export const DataTable = () => {
     }
 
     result.push(cur);
-    return result.map(cell => cell.trim());
+    return result.map(cell => cell.trim().replace(/^"|"$/g, ''));
   };
 
   const findPrimaryAddressIndex = (cols: string[]) => {
@@ -255,12 +234,11 @@ export const DataTable = () => {
       return;
     }
     
+    // Detect delimiter - prefer tabs, then commas
     const hasTab = pastedData.includes('\t');
-    const sampleRow = rows[0];
-    const delimiterGuess = hasTab ? '\t' : ',';
+    const delimiter = hasTab ? '\t' : ',';
     
-    // In insert mode, allow pasting in any row (new rows are at the top now)
-    // In update mode, allow pasting in existing rows but protect primary key
+    console.log('Pasting data:', { pastedData, delimiter, rowCount: rows.length });
     
     // Calculate how many new rows we need
     const neededRows = Math.max(0, (rowIndex + rows.length) - tableData.length);
@@ -273,73 +251,36 @@ export const DataTable = () => {
     // Use setTimeout to ensure rows are added before updating cells
     setTimeout(() => {
       let pastedCells = 0;
-      let truncatedCells = 0;
       const startFieldIndex = columns.indexOf(field);
 
       rows.forEach((row, rowOffset) => {
-        // Choose parsing strategy per row: prefer tabs; only split on commas
-        // if parsed fields fit within available columns. If parsed CSV
-        // produces more tokens than available columns, try to merge the
-        // fragments containing commas stay together.
-        let cells: string[] = [];
-        if (hasTab) {
-          cells = parseRow(row, '\t').map(cell => cell.replace(/^"|"$/g, ''));
-        } else {
-          const csvParsed = parseRow(row, ',').map(cell => cell.replace(/^"|"$/g, ''));
-          const neededCols = columns.length - startFieldIndex;
-          if (csvParsed.length === neededCols) {
-            cells = csvParsed;
-          } else if (csvParsed.length < neededCols) {
-            // not enough tokens: place tokens and pad
-            cells = [...csvParsed];
-          } else {
-            // too many tokens: find address-like column to absorb extras
-            const primaryAddr = findPrimaryAddressIndex(columns);
-            const mergeIndex = (primaryAddr >= startFieldIndex && primaryAddr < startFieldIndex + neededCols)
-              ? primaryAddr
-              : startFieldIndex;
-
-            const mapped: string[] = [];
-            let p = 0;
-            const endIdx = startFieldIndex + neededCols - 1;
-            for (let colIdx = startFieldIndex; colIdx <= endIdx; colIdx++) {
-              if (colIdx < mergeIndex) {
-                mapped.push(csvParsed[p++] || '');
-              } else if (colIdx === mergeIndex) {
-                const remainingColsAfter = endIdx - colIdx;
-                const tokensForThis = Math.max(1, csvParsed.length - p - remainingColsAfter);
-                const val = csvParsed.slice(p, p + tokensForThis).join(', ').trim();
-                mapped.push(val);
-                p += tokensForThis;
-              } else {
-                mapped.push(csvParsed[p++] || '');
-              }
-            }
-            cells = mapped;
-          }
-        }
+        // Parse the row using the detected delimiter
+        const cells = parseRow(row, delimiter);
+        console.log('Parsed cells:', cells);
+        
         const currentRowIndex = rowIndex + rowOffset;
         
         cells.forEach((cell, cellIndex) => {
           const fieldIndex = startFieldIndex + cellIndex;
           const currentField = columns[fieldIndex];
-          if (currentField && currentRowIndex < tableData.length + neededRows) {
+          
+          if (currentField && fieldIndex < columns.length) {
             // In update mode, never modify the primary key (first column)
             if (mode === 'update' && currentField === columns[0]) {
               // skip primary key updates
+              console.log('Skipping primary key update for:', currentField);
             } else {
+              console.log('Updating cell:', { currentRowIndex, currentField, cell });
               updateCell(currentRowIndex, currentField, cell);
               pastedCells++;
             }
-          } else if (!currentField) {
-            truncatedCells++;
           }
         });
       });
       
       toast({
         title: "Data Pasted Successfully",
-        description: `Pasted ${pastedCells} cells across ${rows.length} rows.${truncatedCells > 0 ? ` ${truncatedCells} cells were truncated.` : ''}`,
+        description: `Pasted ${pastedCells} cells across ${rows.length} rows.`,
       });
     }, 200);
   }, [columns, tableData, updateCell, addMultipleRows, toast, mode, selectedDatabase]);
