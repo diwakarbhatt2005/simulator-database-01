@@ -243,7 +243,7 @@ export const DataTable = () => {
     
     const pastedData = e.clipboardData.getData('text');
     
-  const rows = pastedData.split('\n').filter(row => row.trim());
+    const rows = pastedData.split('\n').filter(row => row.trim());
     
     if (rows.length === 0) {
       toast({
@@ -254,9 +254,9 @@ export const DataTable = () => {
       return;
     }
     
-  const hasTab = pastedData.includes('\t');
-  const sampleRow = rows[0];
-  const delimiterGuess = hasTab ? '\t' : ',';
+    const hasTab = pastedData.includes('\t');
+    const sampleRow = rows[0];
+    const delimiterGuess = hasTab ? '\t' : ',';
     
     // Paste behavior depends on mode:
     // - insert: only allow pasting into new rows (preserve existing insert flow)
@@ -406,6 +406,7 @@ export const DataTable = () => {
           description: `${newRows.length} rows inserted successfully with auto-fix applied!`,
         });
       } else if (mode === 'update') {
+        sonnerToast.success('Update mode activated', {
           duration: 4000,
         });
         const pk = columns[0];
@@ -426,6 +427,7 @@ export const DataTable = () => {
         } else {
           originalRows = tableData.slice(0, originalDataLength);
         }
+        const updates: any[] = [];
         for (let i = 0; i < originalRows.length; i++) {
           const orig = originalRows[i];
           const curr = tableData[i];
@@ -441,6 +443,7 @@ export const DataTable = () => {
           });
           // Only push if at least one non-PK field changed
           if (Object.keys(changed).length > 1) {
+            updates.push({ ...changed, _rowIndex: i });
           }
         }
         // Validate that all updates have a non-empty PK value
@@ -540,6 +543,8 @@ export const DataTable = () => {
 
   const handleBulkPaste = () => {
     setBulkPasteError('');
+    const lines = bulkPasteValue.split('\n').filter(line => line.trim());
+    const hasTab = bulkPasteValue.includes('\t');
     if (lines.length === 0) {
       setBulkPasteError('No data found.');
       return;
@@ -557,6 +562,7 @@ export const DataTable = () => {
         const neededCols = columns.length;
         if (csvParsed.length === neededCols) {
           cells = csvParsed;
+        } else if (csvParsed.length < neededCols) {
           cells = [...csvParsed];
         } else {
           // merge extras into address-like column
@@ -581,6 +587,7 @@ export const DataTable = () => {
           cells = mapped;
         }
       }
+      const rowObj: Record<string, any> = {};
       columns.forEach((col, i) => {
         rowObj[col] = cells[i] || '';
       });
@@ -602,6 +609,7 @@ export const DataTable = () => {
     }, 200);
   };
 
+  if (!tableData || tableData.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">No data available</p>
@@ -650,28 +658,28 @@ export const DataTable = () => {
                   Edit
                 </Button>
               ) : (
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      onClick={() => { resetToOriginal(); setMode(null); }}
-                      variant="outline"
-                      className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-smooth"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleSave}
-                      disabled={isSaving}
-                      className="bg-accent hover:bg-accent/90 text-white shadow-primary transition-smooth"
-                    >
-                      {isSaving ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Save className="w-4 h-4 mr-2" />
-                      )}
-                      {isSaving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    onClick={() => { resetToOriginal(); setMode(null); }}
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-smooth"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="bg-accent hover:bg-accent/90 text-white shadow-primary transition-smooth"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </div>
               )}
             </div>
           </div>
