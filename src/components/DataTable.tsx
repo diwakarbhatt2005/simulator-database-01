@@ -327,6 +327,7 @@ export const DataTable = () => {
         description: `Pasted ${pastedCells} cells across ${rows.length} rows.`,
       });
     }, 200);
+  }, [columns, mode, updateCell, addMultipleRows, tableData.length, toast]);
   // Store original data length to block edit/delete (set only once after first data load)
   const [originalDataLength, setOriginalDataLength] = useState(0);
   useEffect(() => {
@@ -857,14 +858,6 @@ export const DataTable = () => {
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>
-                          <Button
-                            onClick={() => deleteRow(rowIndex)}
-                            size="sm"
-                            variant="outline"
-                            className="border-destructive text-destructive hover:bg-destructive hover:text-white transition-smooth"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
                       </td>
                     )}
                     {columns.map((column, colIndex) => (
