@@ -118,7 +118,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           newRow[key] = '';
         }
       });
-      // Insert at the top (index 0)
+      // Insert at the very top of the table
       const newTableData = [newRow, ...tableData];
       set({ tableData: newTableData });
     }

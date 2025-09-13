@@ -127,13 +127,11 @@ export const DataTable = () => {
           newRow[key] = '';
         }
       });
-      // Insert at the beginning after original data
-      const newTableData = [
-        ...tableData.slice(0, originalDataLength),
-        newRow,
-        ...tableData.slice(originalDataLength)
-      ];
+      // Insert at the very top (index 0)
+      const newTableData = [newRow, ...tableData];
       setTableData(newTableData);
+      // Update original data length to account for the new row
+      setOriginalDataLength(prev => prev + 1);
     }
   };
 
